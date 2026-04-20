@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>TSB Real EXE Loader</title>
+<title>TSB Import Scanner</title>
 
 <style>
 html,body{
@@ -63,7 +63,7 @@ canvas{
 <body>
 
 <div id="topbar">
-    <div id="title">Toad Strikes Back — Real EXE Loader</div>
+    <div id="title">Toad Strikes Back — Import Scanner</div>
     <button onclick="boot()">Boot</button>
     <button onclick="location.href='/help'">Help</button>
     <div id="status">Idle</div>
@@ -78,110 +78,88 @@ const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const statusEl = document.getElementById("status");
 
-function status(t){
-    statusEl.textContent = t;
-}
+function status(t){ statusEl.textContent=t; }
 
 function clear(){
     ctx.fillStyle="#000";
     ctx.fillRect(0,0,640,480);
 }
 
-function line(txt,y,color="#fff",size=18){
+function text(txt,x,y,color="#fff",size=18){
     ctx.fillStyle=color;
     ctx.font=size+"px Consolas";
-    ctx.fillText(txt,20,y);
-}
-
-function center(txt,y,color="#fff",size=24){
-    ctx.fillStyle=color;
-    ctx.font=size+"px Arial";
-    ctx.textAlign="center";
-    ctx.fillText(txt,320,y);
-    ctx.textAlign="left";
+    ctx.fillText(txt,x,y);
 }
 
 async function boot(){
     clear();
-    status("Downloading EXE...");
+    status("Loading EXE...");
 
     try{
-        const exeRes = await fetch("https://tsb-web-port.vercel.app/game/TSB.exe");
-        const exeBuf = await exeRes.arrayBuffer();
+        const res = await fetch("https://tsb-web-port.vercel.app/game/TSB.exe");
+        const buf = await res.arrayBuffer();
 
-        const dllRes = await fetch("https://tsb-web-port.vercel.app/game/Cncs232.dll");
-        const dllBuf = await dllRes.arrayBuffer();
-
-        inspectPE(exeBuf,dllBuf);
+        scanImports(buf);
 
     }catch(e){
         console.error(e);
-        status("Load failed");
+        status("Failed");
         clear();
-        center("FAILED TO LOAD FILES",240,"#f55",28);
+        text("FAILED TO LOAD EXE",20,40,"#f55",28);
     }
 }
 
-function inspectPE(exeBuf,dllBuf){
+function scanImports(buffer){
     clear();
 
-    const dv = new DataView(exeBuf);
+    const dv = new DataView(buffer);
+
+    status("Parsing imports...");
 
     let y = 30;
 
-    line("TSB.exe loaded: " + exeBuf.byteLength + " bytes", y); y+=28;
-    line("Cncs232.dll loaded: " + dllBuf.byteLength + " bytes", y); y+=28;
-    y+=10;
+    text("TSB.exe loaded: " + buffer.byteLength + " bytes",20,y); y+=28;
 
-    status("Inspecting EXE");
+    // basic PE checks
+    const mz =
+        String.fromCharCode(
+            dv.getUint8(0),
+            dv.getUint8(1)
+        );
 
-    const mz1 = dv.getUint8(0);
-    const mz2 = dv.getUint8(1);
-    const sig = String.fromCharCode(mz1,mz2);
-
-    line("DOS Signature: " + sig, y, "#7dff7d"); y+=28;
-
-    if(sig !== "MZ"){
-        line("Not a valid EXE", y, "#f55");
+    if(mz !== "MZ"){
+        text("Invalid EXE",20,y,"#f55");
         return;
     }
 
-    const peOffset = dv.getUint32(0x3C, true);
-    line("PE Header Offset: 0x" + peOffset.toString(16).toUpperCase(), y); y+=28;
+    const peOffset = dv.getUint32(0x3C,true);
 
-    const peSig =
+    const pe =
         String.fromCharCode(
             dv.getUint8(peOffset),
-            dv.getUint8(peOffset+1),
-            dv.getUint8(peOffset+2),
-            dv.getUint8(peOffset+3)
-        ).replace(/\0/g,"");
+            dv.getUint8(peOffset+1)
+        );
 
-    line("PE Signature: " + peSig, y, "#7dff7d"); y+=28;
+    if(pe !== "PE"){
+        text("Invalid PE Header",20,y,"#f55");
+        return;
+    }
 
-    const machine = dv.getUint16(peOffset+4, true);
+    const sectionCount = dv.getUint16(peOffset+6,true);
+    const optSize = dv.getUint16(peOffset+20,true);
+    const optStart = peOffset + 24;
+    const secStart = optStart + optSize;
 
-    let machineText="Unknown";
-    if(machine===0x14c) machineText="x86 (32-bit)";
-    if(machine===0x8664) machineText="x64";
+    // Import Directory RVA
+    const importRVA = dv.getUint32(optStart + 104,true);
+    const importSize = dv.getUint32(optStart + 108,true);
 
-    line("Machine: " + machineText, y); y+=28;
+    text("Import Table RVA: 0x" + importRVA.toString(16).toUpperCase(),20,y,"#7dff7d"); y+=26;
+    text("Import Size: " + importSize,20,y,"#7dff7d"); y+=32;
 
-    const sections = dv.getUint16(peOffset+6, true);
-    line("Sections: " + sections, y); y+=28;
+    const sections = [];
 
-    const optSize = dv.getUint16(peOffset+20, true);
-    line("Optional Header Size: " + optSize, y); y+=28;
-
-    const entry = dv.getUint32(peOffset+40, true);
-    line("Entry Point RVA: 0x" + entry.toString(16).toUpperCase(), y, "#ffaa33"); y+=28;
-
-    y+=12;
-    line("Sections:", y, "#7dff7d"); y+=26;
-
-    const secStart = peOffset + 24 + optSize;
-
-    for(let i=0;i<sections;i++){
+    for(let i=0;i<sectionCount;i++){
         const off = secStart + i*40;
 
         let name="";
@@ -190,24 +168,75 @@ function inspectPE(exeBuf,dllBuf){
             if(c!==0) name += String.fromCharCode(c);
         }
 
-        const vsize = dv.getUint32(off+8, true);
-        const rva   = dv.getUint32(off+12, true);
-
-        line(
-            name.padEnd(8," ") +
-            " RVA 0x" + rva.toString(16).toUpperCase() +
-            " Size " + vsize,
-            y
-        );
-        y+=22;
-
-        if(y > 430) break;
+        sections.push({
+            name,
+            virtualSize: dv.getUint32(off+8,true),
+            virtualAddress: dv.getUint32(off+12,true),
+            rawSize: dv.getUint32(off+16,true),
+            rawPtr: dv.getUint32(off+20,true)
+        });
     }
 
-    y+=10;
-    center("REAL FILE OPENED + PARSED",450,"#00ff00",22);
+    function rvaToOffset(rva){
+        for(const s of sections){
+            const start = s.virtualAddress;
+            const end = start + Math.max(s.virtualSize,s.rawSize);
 
-    status("EXE parsed successfully");
+            if(rva >= start && rva < end){
+                return s.rawPtr + (rva - start);
+            }
+        }
+        return null;
+    }
+
+    const importOffset = rvaToOffset(importRVA);
+
+    if(importOffset === null){
+        text("Could not map import table.",20,y,"#f55");
+        return;
+    }
+
+    text("Detected DLL Imports:",20,y,"#ffaa33"); y+=28;
+
+    let desc = importOffset;
+    let found = 0;
+
+    while(true){
+        const originalThunk = dv.getUint32(desc,true);
+        const nameRVA = dv.getUint32(desc+12,true);
+        const firstThunk = dv.getUint32(desc+16,true);
+
+        if(originalThunk===0 && nameRVA===0 && firstThunk===0) break;
+
+        const nameOff = rvaToOffset(nameRVA);
+
+        if(nameOff !== null){
+            let dllName="";
+            let p = nameOff;
+
+            while(true){
+                const c = dv.getUint8(p++);
+                if(c===0) break;
+                dllName += String.fromCharCode(c);
+            }
+
+            text("- " + dllName,20,y,"#fff");
+            y+=24;
+            found++;
+
+            if(y > 440){
+                text("...more imports omitted...",20,y,"#888");
+                break;
+            }
+        }
+
+        desc += 20;
+    }
+
+    y+=18;
+    text("DLL Count: " + found,20,y,"#7dff7d");
+
+    status("Import scan complete");
 }
 </script>
 
