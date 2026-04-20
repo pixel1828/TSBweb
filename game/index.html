@@ -57,9 +57,13 @@ button:hover {
 }
 
 canvas {
+    width: 960px;
+    height: 720px;
+    max-width: 95vw;
+    max-height: 90vh;
     background: black;
-    image-rendering: pixelated;
     border: 2px solid #333;
+    image-rendering: pixelated;
 }
 </style>
 </head>
@@ -67,11 +71,8 @@ canvas {
 
 <div id="topbar">
     <div id="title">Toad Strikes Back — Web Runtime Prototype</div>
-
     <button onclick="bootGame()">Boot</button>
-    <button onclick="fakeRun()">Simulate</button>
     <button onclick="location.href='/help'">Help</button>
-
     <div id="status">Idle</div>
 </div>
 
@@ -80,17 +81,25 @@ canvas {
 </div>
 
 <script>
-const statusEl = document.getElementById("status");
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
+const statusEl = document.getElementById("status");
 
 let exeBuffer = null;
 let dllBuffer = null;
+let booting = false;
 
-async function bootGame() {
-    status("Downloading files...");
+function status(text){
+    statusEl.textContent = text;
+}
 
-    try {
+async function bootGame(){
+    if(booting) return;
+    booting = true;
+
+    status("Downloading game files...");
+
+    try{
         const exeRes = await fetch("./TSB.exe");
         exeBuffer = await exeRes.arrayBuffer();
 
@@ -99,90 +108,137 @@ async function bootGame() {
 
         status("Files loaded");
 
-        inspectFiles();
-        drawBootScreen();
+        await showMFGG();
+        await showDisclaimer();
+        await showTitle();
 
-    } catch (err) {
-        status("Load failed");
+        status("Title screen ready");
+
+    }catch(err){
         console.error(err);
+        status("Boot failed");
     }
+
+    booting = false;
 }
 
-function inspectFiles() {
-    console.log("TSB.exe bytes:", exeBuffer.byteLength);
-    console.log("Cncs232.dll bytes:", dllBuffer.byteLength);
-
-    const exeSig = new Uint8Array(exeBuffer, 0, 2);
-    const dllSig = new Uint8Array(dllBuffer, 0, 2);
-
-    console.log("EXE Signature:", String.fromCharCode(...exeSig));
-    console.log("DLL Signature:", String.fromCharCode(...dllSig));
-}
-
-function drawBootScreen() {
+function clear(){
     ctx.fillStyle = "black";
     ctx.fillRect(0,0,640,480);
-
-    ctx.fillStyle = "#00ff00";
-    ctx.font = "22px Arial";
-    ctx.fillText("TOAD STRIKES BACK", 180, 180);
-
-    ctx.fillStyle = "white";
-    ctx.font = "16px Arial";
-    ctx.fillText("Original EXE + DLL Loaded Successfully", 170, 240);
-    ctx.fillText("Runtime Layer Not Yet Attached", 200, 270);
-
-    status("Ready for runtime layer");
 }
 
-function fakeRun() {
-    status("Running simulation");
+function sleep(ms){
+    return new Promise(r => setTimeout(r, ms));
+}
 
-    let x = 80;
-    let y = 350;
-    let vy = 0;
-    let grounded = false;
+async function fadeText(lines, color="#fff", time=2200){
+    const start = performance.now();
 
-    const keys = {};
+    return new Promise(resolve=>{
+        function frame(now){
+            let t = (now - start) / 500;
+            let alpha = Math.min(1, t);
 
-    window.onkeydown = e => keys[e.key] = true;
-    window.onkeyup = e => keys[e.key] = false;
+            if(now - start > time - 500){
+                alpha = Math.max(0, (time - (now-start)) / 500);
+            }
 
-    function loop() {
-        ctx.fillStyle = "#66aaff";
+            clear();
+
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = color;
+            ctx.textAlign = "center";
+
+            for(let i=0;i<lines.length;i++){
+                ctx.font = i===0 ? "bold 42px Arial" : "22px Arial";
+                ctx.fillText(lines[i], 320, 180 + i*42);
+            }
+
+            ctx.globalAlpha = 1;
+
+            if(now - start < time){
+                requestAnimationFrame(frame);
+            }else{
+                resolve();
+            }
+        }
+        requestAnimationFrame(frame);
+    });
+}
+
+async function showMFGG(){
+    status("Showing MFGG logo");
+    await fadeText([
+        "MFGG"
+    ], "#ffaa33", 2600);
+}
+
+async function showDisclaimer(){
+    status("Showing freeware notice");
+    await fadeText([
+        "FREEWARE",
+        "This fan-made game is not affiliated",
+        "with Nintendo."
+    ], "#ffffff", 3600);
+}
+
+let titleBlink = true;
+
+async function showTitle(){
+    status("Loading title screen");
+
+    function draw(){
+        clear();
+
+        // sky
+        ctx.fillStyle = "#5aa9ff";
         ctx.fillRect(0,0,640,480);
 
-        ctx.fillStyle = "#44aa44";
-        ctx.fillRect(0,420,640,60);
+        // hills
+        ctx.fillStyle = "#4cae50";
+        ctx.beginPath();
+        ctx.arc(120,420,140,Math.PI,0);
+        ctx.fill();
 
-        if(keys["ArrowLeft"]) x -= 3;
-        if(keys["ArrowRight"]) x += 3;
+        ctx.beginPath();
+        ctx.arc(500,430,160,Math.PI,0);
+        ctx.fill();
 
-        if(keys[" "] && grounded){
-            vy = -10;
-            grounded = false;
+        // ground
+        ctx.fillStyle = "#8a4f20";
+        ctx.fillRect(0,400,640,80);
+
+        ctx.fillStyle = "#2c9d2c";
+        ctx.fillRect(0,390,640,12);
+
+        // title
+        ctx.fillStyle = "#fff";
+        ctx.textAlign = "center";
+        ctx.font = "bold 54px Arial";
+        ctx.fillText("TOAD STRIKES BACK", 320, 145);
+
+        ctx.font = "22px Arial";
+        ctx.fillText("WEB PORT", 320, 185);
+
+        if(titleBlink){
+            ctx.font = "24px Arial";
+            ctx.fillText("PRESS ANY KEY", 320, 315);
         }
 
-        vy += 0.45;
-        y += vy;
-
-        if(y >= 356){
-            y = 356;
-            vy = 0;
-            grounded = true;
-        }
-
-        ctx.fillStyle = "#ff4444";
-        ctx.fillRect(x,y,32,64);
-
-        requestAnimationFrame(loop);
+        ctx.font = "16px Arial";
+        ctx.fillText("Original EXE + DLL Loaded", 320, 455);
     }
 
-    loop();
-}
+    draw();
 
-function status(text){
-    statusEl.textContent = text;
+    setInterval(()=>{
+        titleBlink = !titleBlink;
+        draw();
+    }, 500);
+
+    window.onkeydown = ()=>{
+        status("Game start pending runtime");
+    };
 }
 </script>
 
