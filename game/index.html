@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Toad Strikes Back Web Port</title>
+
+<style>
+html, body {
+    margin: 0;
+    padding: 0;
+    background: #111;
+    color: white;
+    font-family: Arial, Helvetica, sans-serif;
+    overflow: hidden;
+}
+
+#topbar {
+    height: 48px;
+    background: #1d1d1d;
+    border-bottom: 2px solid #333;
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    gap: 12px;
+}
+
+#title {
+    font-weight: bold;
+    color: #7dff7d;
+}
+
+button {
+    background: #2d2d2d;
+    color: white;
+    border: 1px solid #555;
+    padding: 7px 12px;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #3a3a3a;
+}
+
+#status {
+    margin-left: auto;
+    color: #aaa;
+    font-size: 14px;
+}
+
+#gameWrap {
+    width: 100vw;
+    height: calc(100vh - 48px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+canvas {
+    background: black;
+    image-rendering: pixelated;
+    border: 2px solid #333;
+}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+    <div id="title">Toad Strikes Back — Web Runtime Prototype</div>
+
+    <button onclick="bootGame()">Boot</button>
+    <button onclick="fakeRun()">Simulate</button>
+    <button onclick="location.href='/help'">Help</button>
+
+    <div id="status">Idle</div>
+</div>
+
+<div id="gameWrap">
+    <canvas id="game" width="640" height="480"></canvas>
+</div>
+
+<script>
+const statusEl = document.getElementById("status");
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+let exeBuffer = null;
+let dllBuffer = null;
+
+async function bootGame() {
+    status("Downloading files...");
+
+    try {
+        const exeRes = await fetch("./TSB.exe");
+        exeBuffer = await exeRes.arrayBuffer();
+
+        const dllRes = await fetch("./Cncs232.dll");
+        dllBuffer = await dllRes.arrayBuffer();
+
+        status("Files loaded");
+
+        inspectFiles();
+        drawBootScreen();
+
+    } catch (err) {
+        status("Load failed");
+        console.error(err);
+    }
+}
+
+function inspectFiles() {
+    console.log("TSB.exe bytes:", exeBuffer.byteLength);
+    console.log("Cncs232.dll bytes:", dllBuffer.byteLength);
+
+    const exeSig = new Uint8Array(exeBuffer, 0, 2);
+    const dllSig = new Uint8Array(dllBuffer, 0, 2);
+
+    console.log("EXE Signature:", String.fromCharCode(...exeSig));
+    console.log("DLL Signature:", String.fromCharCode(...dllSig));
+}
+
+function drawBootScreen() {
+    ctx.fillStyle = "black";
+    ctx.fillRect(0,0,640,480);
+
+    ctx.fillStyle = "#00ff00";
+    ctx.font = "22px Arial";
+    ctx.fillText("TOAD STRIKES BACK", 180, 180);
+
+    ctx.fillStyle = "white";
+    ctx.font = "16px Arial";
+    ctx.fillText("Original EXE + DLL Loaded Successfully", 170, 240);
+    ctx.fillText("Runtime Layer Not Yet Attached", 200, 270);
+
+    status("Ready for runtime layer");
+}
+
+function fakeRun() {
+    status("Running simulation");
+
+    let x = 80;
+    let y = 350;
+    let vy = 0;
+    let grounded = false;
+
+    const keys = {};
+
+    window.onkeydown = e => keys[e.key] = true;
+    window.onkeyup = e => keys[e.key] = false;
+
+    function loop() {
+        ctx.fillStyle = "#66aaff";
+        ctx.fillRect(0,0,640,480);
+
+        ctx.fillStyle = "#44aa44";
+        ctx.fillRect(0,420,640,60);
+
+        if(keys["ArrowLeft"]) x -= 3;
+        if(keys["ArrowRight"]) x += 3;
+
+        if(keys[" "] && grounded){
+            vy = -10;
+            grounded = false;
+        }
+
+        vy += 0.45;
+        y += vy;
+
+        if(y >= 356){
+            y = 356;
+            vy = 0;
+            grounded = true;
+        }
+
+        ctx.fillStyle = "#ff4444";
+        ctx.fillRect(x,y,32,64);
+
+        requestAnimationFrame(loop);
+    }
+
+    loop();
+}
+
+function status(text){
+    statusEl.textContent = text;
+}
+</script>
+
+</body>
+</html>
