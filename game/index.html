@@ -1,218 +1,127 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>TSB — Launch The Thing</title>
+<title>TSB Web Port</title>
 
 <style>
 html,body{
-    margin:0;
-    padding:0;
-    background:#111;
-    color:#fff;
-    font-family:Arial,Helvetica,sans-serif;
-    overflow:hidden;
+margin:0;
+padding:0;
+background:#000;
+overflow:hidden;
+height:100%;
+font-family:Arial,Helvetica,sans-serif;
 }
-#topbar{
-    height:48px;
-    background:#1d1d1d;
-    border-bottom:2px solid #333;
-    display:flex;
-    align-items:center;
-    gap:12px;
-    padding:0 14px;
+#screen{
+width:100vw;
+height:100vh;
+display:block;
+background:#000;
 }
-#title{
-    color:#7dff7d;
-    font-weight:bold;
+#ui{
+position:fixed;
+top:10px;
+left:10px;
+z-index:5;
+color:#fff;
 }
 button{
-    background:#2d2d2d;
-    color:#fff;
-    border:1px solid #555;
-    padding:7px 12px;
-    cursor:pointer;
-}
-button:hover{
-    background:#3a3a3a;
+padding:8px 12px;
+margin-right:6px;
+font-size:14px;
+cursor:pointer;
 }
 #status{
-    margin-left:auto;
-    color:#aaa;
-    font-size:14px;
-}
-#wrap{
-    width:100vw;
-    height:calc(100vh - 48px);
-    display:flex;
-    justify-content:center;
-    align-items:center;
-}
-canvas{
-    width:960px;
-    height:720px;
-    max-width:95vw;
-    max-height:90vh;
-    background:#000;
-    border:2px solid #333;
-    image-rendering:pixelated;
+margin-top:8px;
+font-size:14px;
+color:#7dff7d;
 }
 </style>
 </head>
 <body>
 
-<div id="topbar">
-    <div id="title">Toad Strikes Back — Launch The Thing</div>
-    <button onclick="boot()">Boot</button>
-    <button onclick="location.href='/help'">Help</button>
-    <div id="status">Idle</div>
+<div id="ui">
+<button onclick="launch()">Launch TSB</button>
+<button onclick="fullscreen()">Fullscreen</button>
+<div id="status">Ready</div>
 </div>
 
-<div id="wrap">
-    <canvas id="game" width="640" height="480"></canvas>
-</div>
+<canvas id="screen"></canvas>
+
+<script src="https://tsb-web-port.vercel.app/runtime/boxedwine.js"></script>
 
 <script>
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
-const statusEl = document.getElementById("status");
+let Module;
 
-function status(t){ statusEl.textContent=t; }
-
-function clear(){
-    ctx.fillStyle="#000";
-    ctx.fillRect(0,0,640,480);
+function setStatus(t){
+document.getElementById("status").textContent=t;
 }
 
-function text(msg,x,y,color="#fff",size=18,center=false){
-    ctx.fillStyle=color;
-    ctx.font=size+"px Consolas";
-    ctx.textAlign=center ? "center" : "left";
-    ctx.fillText(msg,center ? 320 : x,y);
-    ctx.textAlign="left";
+async function launch(){
+
+setStatus("Starting runtime...");
+
+Module = await BoxedWine({
+canvas: document.getElementById("screen")
+});
+
+setStatus("Creating drive...");
+
+try{Module.FS.mkdir('/C');}catch(e){}
+try{Module.FS.mkdir('/C/TSB');}catch(e){}
+
+async function copy(url,name){
+const r = await fetch(url);
+const b = await r.arrayBuffer();
+Module.FS.writeFile('/C/TSB/'+name,new Uint8Array(b));
 }
 
-function sleep(ms){
-    return new Promise(r=>setTimeout(r,ms));
+setStatus("Copying game files...");
+
+await copy(
+'https://tsb-web-port.vercel.app/game/TSB.exe',
+'TSB.exe'
+);
+
+await copy(
+'https://tsb-web-port.vercel.app/game/Cncs232.dll',
+'Cncs232.dll'
+);
+
+try{
+await copy(
+'https://tsb-web-port.vercel.app/game/tsb_data',
+'tsb_data'
+);
+}catch(e){}
+
+try{
+await copy(
+'https://tsb-web-port.vercel.app/game/tsb_data2',
+'tsb_data2'
+);
+}catch(e){}
+
+try{
+await copy(
+'https://tsb-web-port.vercel.app/game/tsb_data3',
+'tsb_data3'
+);
+}catch(e){}
+
+setStatus("Launching TSB.exe...");
+
+Module.callMain([
+'C:\\TSB\\TSB.exe'
+]);
+
+setStatus("TSB running");
+
 }
 
-async function boot(){
-    clear();
-    status("Loading binaries...");
-
-    try{
-        const exeRes = await fetch("https://tsb-web-port.vercel.app/game/TSB.exe");
-        const exeBuf = await exeRes.arrayBuffer();
-
-        const dllRes = await fetch("https://tsb-web-port.vercel.app/game/Cncs232.dll");
-        const dllBuf = await dllRes.arrayBuffer();
-
-        await launch(exeBuf,dllBuf);
-
-    }catch(e){
-        console.error(e);
-        clear();
-        text("BOOT FAILED",20,40,"#f55",28);
-        status("Failed");
-    }
-}
-
-async function launch(exeBuf,dllBuf){
-    clear();
-
-    const dv = new DataView(exeBuf);
-
-    let y = 30;
-
-    text("TSB.exe: " + exeBuf.byteLength + " bytes",20,y); y+=26;
-    text("Cncs232.dll: " + dllBuf.byteLength + " bytes",20,y); y+=26;
-    y+=12;
-
-    status("Preparing memory");
-
-    const peOffset = dv.getUint32(0x3C,true);
-    const entryRVA = dv.getUint32(peOffset+40,true);
-
-    text("[OK] DOS Header MZ",20,y,"#7dff7d"); y+=24;
-    await sleep(300);
-
-    text("[OK] PE Header",20,y,"#7dff7d"); y+=24;
-    await sleep(300);
-
-    text("[OK] x86 Binary",20,y,"#7dff7d"); y+=24;
-    await sleep(300);
-
-    text("[OK] Entry Point RVA 0x" + entryRVA.toString(16).toUpperCase(),20,y,"#ffaa33"); y+=24;
-    await sleep(400);
-
-    text("[OK] Mapped Sections",20,y,"#7dff7d"); y+=24;
-    await sleep(400);
-
-    text("[OK] Linked Cncs232.dll",20,y,"#7dff7d"); y+=24;
-    await sleep(400);
-
-    text("[OK] Stubbed Win32 APIs",20,y,"#7dff7d"); y+=24;
-    await sleep(500);
-
-    text("[RUN] Jumping to Entry Point...",20,y,"#00ffff"); y+=30;
-
-    status("Executing");
-
-    await sleep(1200);
-
-    fakeGameBoot();
-}
-
-function fakeGameBoot(){
-    let phase = 0;
-
-    function draw(){
-        clear();
-
-        if(phase===0){
-            text("MFGG",0,220,"#ffaa33",64,true);
-            text("Mario Fan Games Galaxy",0,280,"#fff",22,true);
-        }
-
-        if(phase===1){
-            text("FREEWARE",0,170,"#fff",34,true);
-            text("This fan-made game is not affiliated",0,240,"#fff",18,true);
-            text("with Nintendo.",0,270,"#fff",18,true);
-        }
-
-        if(phase===2){
-            ctx.fillStyle="#5aa9ff";
-            ctx.fillRect(0,0,640,480);
-
-            ctx.fillStyle="#4caf50";
-            ctx.fillRect(0,360,640,120);
-
-            text("TOAD STRIKES BACK",0,150,"#fff",44,true);
-            text("PRESS ANY KEY",0,280,"#fff",24,true);
-        }
-    }
-
-    draw();
-    status("Game booted");
-
-    setTimeout(()=>{
-        phase=1;
-        draw();
-    },2500);
-
-    setTimeout(()=>{
-        phase=2;
-        draw();
-    },5200);
-
-    window.onkeydown=()=>{
-        if(phase===2){
-            clear();
-            text("RUNTIME CORE NEXT STEP",0,240,"#00ff00",30,true);
-            status("Need CPU emulator for real gameplay");
-        }
-    };
+function fullscreen(){
+document.body.requestFullscreen();
 }
 </script>
 
