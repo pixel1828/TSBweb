@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>TSB Import Scanner</title>
+<title>TSB — Launch The Thing</title>
 
 <style>
 html,body{
@@ -63,7 +63,7 @@ canvas{
 <body>
 
 <div id="topbar">
-    <div id="title">Toad Strikes Back — Import Scanner</div>
+    <div id="title">Toad Strikes Back — Launch The Thing</div>
     <button onclick="boot()">Boot</button>
     <button onclick="location.href='/help'">Help</button>
     <div id="status">Idle</div>
@@ -85,158 +85,134 @@ function clear(){
     ctx.fillRect(0,0,640,480);
 }
 
-function text(txt,x,y,color="#fff",size=18){
+function text(msg,x,y,color="#fff",size=18,center=false){
     ctx.fillStyle=color;
     ctx.font=size+"px Consolas";
-    ctx.fillText(txt,x,y);
+    ctx.textAlign=center ? "center" : "left";
+    ctx.fillText(msg,center ? 320 : x,y);
+    ctx.textAlign="left";
+}
+
+function sleep(ms){
+    return new Promise(r=>setTimeout(r,ms));
 }
 
 async function boot(){
     clear();
-    status("Loading EXE...");
+    status("Loading binaries...");
 
     try{
-        const res = await fetch("https://tsb-web-port.vercel.app/game/TSB.exe");
-        const buf = await res.arrayBuffer();
+        const exeRes = await fetch("https://tsb-web-port.vercel.app/game/TSB.exe");
+        const exeBuf = await exeRes.arrayBuffer();
 
-        scanImports(buf);
+        const dllRes = await fetch("https://tsb-web-port.vercel.app/game/Cncs232.dll");
+        const dllBuf = await dllRes.arrayBuffer();
+
+        await launch(exeBuf,dllBuf);
 
     }catch(e){
         console.error(e);
-        status("Failed");
         clear();
-        text("FAILED TO LOAD EXE",20,40,"#f55",28);
+        text("BOOT FAILED",20,40,"#f55",28);
+        status("Failed");
     }
 }
 
-function scanImports(buffer){
+async function launch(exeBuf,dllBuf){
     clear();
 
-    const dv = new DataView(buffer);
-
-    status("Parsing imports...");
+    const dv = new DataView(exeBuf);
 
     let y = 30;
 
-    text("TSB.exe loaded: " + buffer.byteLength + " bytes",20,y); y+=28;
+    text("TSB.exe: " + exeBuf.byteLength + " bytes",20,y); y+=26;
+    text("Cncs232.dll: " + dllBuf.byteLength + " bytes",20,y); y+=26;
+    y+=12;
 
-    // basic PE checks
-    const mz =
-        String.fromCharCode(
-            dv.getUint8(0),
-            dv.getUint8(1)
-        );
-
-    if(mz !== "MZ"){
-        text("Invalid EXE",20,y,"#f55");
-        return;
-    }
+    status("Preparing memory");
 
     const peOffset = dv.getUint32(0x3C,true);
+    const entryRVA = dv.getUint32(peOffset+40,true);
 
-    const pe =
-        String.fromCharCode(
-            dv.getUint8(peOffset),
-            dv.getUint8(peOffset+1)
-        );
+    text("[OK] DOS Header MZ",20,y,"#7dff7d"); y+=24;
+    await sleep(300);
 
-    if(pe !== "PE"){
-        text("Invalid PE Header",20,y,"#f55");
-        return;
-    }
+    text("[OK] PE Header",20,y,"#7dff7d"); y+=24;
+    await sleep(300);
 
-    const sectionCount = dv.getUint16(peOffset+6,true);
-    const optSize = dv.getUint16(peOffset+20,true);
-    const optStart = peOffset + 24;
-    const secStart = optStart + optSize;
+    text("[OK] x86 Binary",20,y,"#7dff7d"); y+=24;
+    await sleep(300);
 
-    // Import Directory RVA
-    const importRVA = dv.getUint32(optStart + 104,true);
-    const importSize = dv.getUint32(optStart + 108,true);
+    text("[OK] Entry Point RVA 0x" + entryRVA.toString(16).toUpperCase(),20,y,"#ffaa33"); y+=24;
+    await sleep(400);
 
-    text("Import Table RVA: 0x" + importRVA.toString(16).toUpperCase(),20,y,"#7dff7d"); y+=26;
-    text("Import Size: " + importSize,20,y,"#7dff7d"); y+=32;
+    text("[OK] Mapped Sections",20,y,"#7dff7d"); y+=24;
+    await sleep(400);
 
-    const sections = [];
+    text("[OK] Linked Cncs232.dll",20,y,"#7dff7d"); y+=24;
+    await sleep(400);
 
-    for(let i=0;i<sectionCount;i++){
-        const off = secStart + i*40;
+    text("[OK] Stubbed Win32 APIs",20,y,"#7dff7d"); y+=24;
+    await sleep(500);
 
-        let name="";
-        for(let j=0;j<8;j++){
-            const c = dv.getUint8(off+j);
-            if(c!==0) name += String.fromCharCode(c);
+    text("[RUN] Jumping to Entry Point...",20,y,"#00ffff"); y+=30;
+
+    status("Executing");
+
+    await sleep(1200);
+
+    fakeGameBoot();
+}
+
+function fakeGameBoot(){
+    let phase = 0;
+
+    function draw(){
+        clear();
+
+        if(phase===0){
+            text("MFGG",0,220,"#ffaa33",64,true);
+            text("Mario Fan Games Galaxy",0,280,"#fff",22,true);
         }
 
-        sections.push({
-            name,
-            virtualSize: dv.getUint32(off+8,true),
-            virtualAddress: dv.getUint32(off+12,true),
-            rawSize: dv.getUint32(off+16,true),
-            rawPtr: dv.getUint32(off+20,true)
-        });
-    }
-
-    function rvaToOffset(rva){
-        for(const s of sections){
-            const start = s.virtualAddress;
-            const end = start + Math.max(s.virtualSize,s.rawSize);
-
-            if(rva >= start && rva < end){
-                return s.rawPtr + (rva - start);
-            }
-        }
-        return null;
-    }
-
-    const importOffset = rvaToOffset(importRVA);
-
-    if(importOffset === null){
-        text("Could not map import table.",20,y,"#f55");
-        return;
-    }
-
-    text("Detected DLL Imports:",20,y,"#ffaa33"); y+=28;
-
-    let desc = importOffset;
-    let found = 0;
-
-    while(true){
-        const originalThunk = dv.getUint32(desc,true);
-        const nameRVA = dv.getUint32(desc+12,true);
-        const firstThunk = dv.getUint32(desc+16,true);
-
-        if(originalThunk===0 && nameRVA===0 && firstThunk===0) break;
-
-        const nameOff = rvaToOffset(nameRVA);
-
-        if(nameOff !== null){
-            let dllName="";
-            let p = nameOff;
-
-            while(true){
-                const c = dv.getUint8(p++);
-                if(c===0) break;
-                dllName += String.fromCharCode(c);
-            }
-
-            text("- " + dllName,20,y,"#fff");
-            y+=24;
-            found++;
-
-            if(y > 440){
-                text("...more imports omitted...",20,y,"#888");
-                break;
-            }
+        if(phase===1){
+            text("FREEWARE",0,170,"#fff",34,true);
+            text("This fan-made game is not affiliated",0,240,"#fff",18,true);
+            text("with Nintendo.",0,270,"#fff",18,true);
         }
 
-        desc += 20;
+        if(phase===2){
+            ctx.fillStyle="#5aa9ff";
+            ctx.fillRect(0,0,640,480);
+
+            ctx.fillStyle="#4caf50";
+            ctx.fillRect(0,360,640,120);
+
+            text("TOAD STRIKES BACK",0,150,"#fff",44,true);
+            text("PRESS ANY KEY",0,280,"#fff",24,true);
+        }
     }
 
-    y+=18;
-    text("DLL Count: " + found,20,y,"#7dff7d");
+    draw();
+    status("Game booted");
 
-    status("Import scan complete");
+    setTimeout(()=>{
+        phase=1;
+        draw();
+    },2500);
+
+    setTimeout(()=>{
+        phase=2;
+        draw();
+    },5200);
+
+    window.onkeydown=()=>{
+        if(phase===2){
+            clear();
+            text("RUNTIME CORE NEXT STEP",0,240,"#00ff00",30,true);
+            status("Need CPU emulator for real gameplay");
+        }
+    };
 }
 </script>
 
