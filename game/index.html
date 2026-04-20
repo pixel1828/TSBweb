@@ -3,80 +3,73 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Toad Strikes Back Web Port</title>
+<title>TSB Real EXE Loader</title>
 
 <style>
-html, body {
-    margin: 0;
-    padding: 0;
-    background: #111;
-    color: white;
-    font-family: Arial, Helvetica, sans-serif;
-    overflow: hidden;
+html,body{
+    margin:0;
+    padding:0;
+    background:#111;
+    color:#fff;
+    font-family:Arial,Helvetica,sans-serif;
+    overflow:hidden;
 }
-
-#topbar {
-    height: 48px;
-    background: #1d1d1d;
-    border-bottom: 2px solid #333;
-    display: flex;
-    align-items: center;
-    padding: 0 14px;
-    gap: 12px;
+#topbar{
+    height:48px;
+    background:#1d1d1d;
+    border-bottom:2px solid #333;
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:0 14px;
 }
-
-#title {
-    font-weight: bold;
-    color: #7dff7d;
+#title{
+    color:#7dff7d;
+    font-weight:bold;
 }
-
-button {
-    background: #2d2d2d;
-    color: white;
-    border: 1px solid #555;
-    padding: 7px 12px;
-    cursor: pointer;
+button{
+    background:#2d2d2d;
+    color:#fff;
+    border:1px solid #555;
+    padding:7px 12px;
+    cursor:pointer;
 }
-
-button:hover {
-    background: #3a3a3a;
+button:hover{
+    background:#3a3a3a;
 }
-
-#status {
-    margin-left: auto;
-    color: #aaa;
-    font-size: 14px;
+#status{
+    margin-left:auto;
+    color:#aaa;
+    font-size:14px;
 }
-
-#gameWrap {
-    width: 100vw;
-    height: calc(100vh - 48px);
-    display: flex;
-    justify-content: center;
-    align-items: center;
+#wrap{
+    width:100vw;
+    height:calc(100vh - 48px);
+    display:flex;
+    justify-content:center;
+    align-items:center;
 }
-
-canvas {
-    width: 960px;
-    height: 720px;
-    max-width: 95vw;
-    max-height: 90vh;
-    background: black;
-    border: 2px solid #333;
-    image-rendering: pixelated;
+canvas{
+    width:960px;
+    height:720px;
+    max-width:95vw;
+    max-height:90vh;
+    background:#000;
+    border:2px solid #333;
+    image-rendering:pixelated;
 }
 </style>
 </head>
 <body>
 
 <div id="topbar">
-    <div id="title">Toad Strikes Back — Web Runtime Prototype</div>
-    <button onclick="bootGame()">Boot</button>
+    <div id="title">Toad Strikes Back — Real EXE Loader</div>
+    <button onclick="boot()">Boot</button>
     <button onclick="location.href='/help'">Help</button>
     <div id="status">Idle</div>
 </div>
 
-<div id="gameWrap">
+<div id="wrap">
     <canvas id="game" width="640" height="480"></canvas>
 </div>
 
@@ -85,160 +78,135 @@ const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const statusEl = document.getElementById("status");
 
-let exeBuffer = null;
-let dllBuffer = null;
-let booting = false;
-
-function status(text){
-    statusEl.textContent = text;
-}
-
-async function bootGame(){
-    if(booting) return;
-    booting = true;
-
-    status("Downloading game files...");
-
-    try{
-        const exeRes = await fetch("./TSB.exe");
-        exeBuffer = await exeRes.arrayBuffer();
-
-        const dllRes = await fetch("./Cncs232.dll");
-        dllBuffer = await dllRes.arrayBuffer();
-
-        status("Files loaded");
-
-        await showMFGG();
-        await showDisclaimer();
-        await showTitle();
-
-        status("Title screen ready");
-
-    }catch(err){
-        console.error(err);
-        status("Boot failed");
-    }
-
-    booting = false;
-}
+function status(t){ statusEl.textContent = t; }
 
 function clear(){
-    ctx.fillStyle = "black";
+    ctx.fillStyle="#000";
     ctx.fillRect(0,0,640,480);
 }
 
-function sleep(ms){
-    return new Promise(r => setTimeout(r, ms));
+function line(txt,y,color="#fff",size=18){
+    ctx.fillStyle=color;
+    ctx.font=size+"px Consolas";
+    ctx.fillText(txt,20,y);
 }
 
-async function fadeText(lines, color="#fff", time=2200){
-    const start = performance.now();
-
-    return new Promise(resolve=>{
-        function frame(now){
-            let t = (now - start) / 500;
-            let alpha = Math.min(1, t);
-
-            if(now - start > time - 500){
-                alpha = Math.max(0, (time - (now-start)) / 500);
-            }
-
-            clear();
-
-            ctx.globalAlpha = alpha;
-            ctx.fillStyle = color;
-            ctx.textAlign = "center";
-
-            for(let i=0;i<lines.length;i++){
-                ctx.font = i===0 ? "bold 42px Arial" : "22px Arial";
-                ctx.fillText(lines[i], 320, 180 + i*42);
-            }
-
-            ctx.globalAlpha = 1;
-
-            if(now - start < time){
-                requestAnimationFrame(frame);
-            }else{
-                resolve();
-            }
-        }
-        requestAnimationFrame(frame);
-    });
+function center(txt,y,color="#fff",size=24){
+    ctx.fillStyle=color;
+    ctx.font=size+"px Arial";
+    ctx.textAlign="center";
+    ctx.fillText(txt,320,y);
+    ctx.textAlign="left";
 }
 
-async function showMFGG(){
-    status("Showing MFGG logo");
-    await fadeText([
-        "MFGG"
-    ], "#ffaa33", 2600);
-}
+async function boot(){
+    clear();
+    status("Downloading EXE...");
 
-async function showDisclaimer(){
-    status("Showing freeware notice");
-    await fadeText([
-        "FREEWARE",
-        "This fan-made game is not affiliated",
-        "with Nintendo."
-    ], "#ffffff", 3600);
-}
+    try{
+        const exeRes = await fetch("./TSB.exe");
+        const exeBuf = await exeRes.arrayBuffer();
 
-let titleBlink = true;
+        const dllRes = await fetch("./Cncs232.dll");
+        const dllBuf = await dllRes.arrayBuffer();
 
-async function showTitle(){
-    status("Loading title screen");
+        inspectPE(exeBuf,dllBuf);
 
-    function draw(){
+    }catch(e){
+        console.error(e);
+        status("Load failed");
         clear();
+        center("FAILED TO LOAD FILES",240,"#f55",28);
+    }
+}
 
-        // sky
-        ctx.fillStyle = "#5aa9ff";
-        ctx.fillRect(0,0,640,480);
+function inspectPE(exeBuf,dllBuf){
+    clear();
 
-        // hills
-        ctx.fillStyle = "#4cae50";
-        ctx.beginPath();
-        ctx.arc(120,420,140,Math.PI,0);
-        ctx.fill();
+    const dv = new DataView(exeBuf);
 
-        ctx.beginPath();
-        ctx.arc(500,430,160,Math.PI,0);
-        ctx.fill();
+    let y = 30;
 
-        // ground
-        ctx.fillStyle = "#8a4f20";
-        ctx.fillRect(0,400,640,80);
+    line("TSB.exe loaded: " + exeBuf.byteLength + " bytes", y); y+=28;
+    line("Cncs232.dll loaded: " + dllBuf.byteLength + " bytes", y); y+=28;
+    y+=10;
 
-        ctx.fillStyle = "#2c9d2c";
-        ctx.fillRect(0,390,640,12);
+    status("Inspecting EXE");
 
-        // title
-        ctx.fillStyle = "#fff";
-        ctx.textAlign = "center";
-        ctx.font = "bold 54px Arial";
-        ctx.fillText("TOAD STRIKES BACK", 320, 145);
+    // DOS header
+    const mz1 = dv.getUint8(0);
+    const mz2 = dv.getUint8(1);
+    const sig = String.fromCharCode(mz1,mz2);
 
-        ctx.font = "22px Arial";
-        ctx.fillText("WEB PORT", 320, 185);
+    line("DOS Signature: " + sig, y, "#7dff7d"); y+=28;
 
-        if(titleBlink){
-            ctx.font = "24px Arial";
-            ctx.fillText("PRESS ANY KEY", 320, 315);
-        }
-
-        ctx.font = "16px Arial";
-        ctx.fillText("Original EXE + DLL Loaded", 320, 455);
+    if(sig !== "MZ"){
+        line("Not a valid EXE", y, "#f55");
+        return;
     }
 
-    draw();
+    const peOffset = dv.getUint32(0x3C, true);
+    line("PE Header Offset: 0x" + peOffset.toString(16).toUpperCase(), y); y+=28;
 
-    setInterval(()=>{
-        titleBlink = !titleBlink;
-        draw();
-    }, 500);
+    const peSig =
+        String.fromCharCode(
+            dv.getUint8(peOffset),
+            dv.getUint8(peOffset+1),
+            dv.getUint8(peOffset+2),
+            dv.getUint8(peOffset+3)
+        );
 
-    window.onkeydown = ()=>{
-        status("Game start pending runtime");
-    };
+    line("PE Signature: " + peSig.replace(/\0/g,""), y, "#7dff7d"); y+=28;
+
+    const machine = dv.getUint16(peOffset+4, true);
+    let machineText = "Unknown";
+
+    if(machine === 0x14c) machineText = "x86 (32-bit)";
+    if(machine === 0x8664) machineText = "x64";
+
+    line("Machine: " + machineText, y); y+=28;
+
+    const sectionCount = dv.getUint16(peOffset+6, true);
+    line("Sections: " + sectionCount, y); y+=28;
+
+    const optSize = dv.getUint16(peOffset+20, true);
+    line("Optional Header Size: " + optSize, y); y+=28;
+
+    const entryRVA = dv.getUint32(peOffset+40, true);
+    line("Entry Point RVA: 0x" + entryRVA.toString(16).toUpperCase(), y, "#ffaa33"); y+=28;
+
+    y+=12;
+    line("Sections:", y, "#7dff7d"); y+=26;
+
+    const secStart = peOffset + 24 + optSize;
+
+    for(let i=0;i<sectionCount;i++){
+        const off = secStart + (i*40);
+
+        let name = "";
+        for(let j=0;j<8;j++){
+            const c = dv.getUint8(off+j);
+            if(c !== 0) name += String.fromCharCode(c);
+        }
+
+        const vsize = dv.getUint32(off+8, true);
+        const rva   = dv.getUint32(off+12, true);
+
+        line(
+            name.padEnd(8," ") +
+            " RVA 0x" + rva.toString(16).toUpperCase() +
+            " Size " + vsize,
+            y
+        );
+        y+=22;
+
+        if(y > 430) break;
+    }
+
+    y+=10;
+    center("REAL FILE OPENED + PARSED", 450, "#00ff00", 22);
+
+    status("EXE parsed successfully");
 }
 </script>
 
